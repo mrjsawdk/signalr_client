@@ -125,6 +125,7 @@ class HubConnection {
   Future<void> stop() {
     _logger?.finer("Stopping HubConnection.");
 
+    //TODO: Call stopInternal to distinguish between forced disconnect and connection loss
     _cleanupTimeoutTimer();
     _cleanupServerPingTimer();
     return _connection.stop(Exception("closed"));
@@ -354,6 +355,7 @@ class HubConnection {
             final closeMsg = message as CloseMessage;
 
             // We don't want to wait on the stop itself.
+            //TODO: Check for "allowreconnect" and if so this is OK, if not call stopInternal which sets the right state
             _connection.stop(!isStringEmpty(closeMsg.error)
                 ? new GeneralError(
                     "Server returned an error on close: '${closeMsg.error}'")
@@ -463,6 +465,7 @@ class HubConnection {
         _logger?.severe(message);
 
         // We don't need to wait on this Promise.
+        //TODO: Call stopinternal in stead to prevent reconnect
         _connection.stop(new GeneralError(message));
       }
     } else {
@@ -475,7 +478,8 @@ class HubConnection {
     final callbacks = _callbacks;
     callbacks.clear();
 
-    _connectionState = HubConnectionState.Disconnected;
+    //MRJ: Moved
+    //_connectionState = HubConnectionState.Disconnected;
 
     // if handshake is in progress start will be waiting for the handshake promise, so we complete it
     // if it has already completed this should just noop
@@ -487,6 +491,20 @@ class HubConnection {
 
     _cleanupTimeoutTimer();
     _cleanupServerPingTimer();
+
+    /*
+    TODO: This is where the retry should initiate
+
+  if(should retrye) {
+    retry
+  } else {
+_connectionState = HubConnectionState.Disconnected;
+_closedCallbacks.forEach((callback) => callback(error));
+  }
+
+    
+    */
+    
 
     _closedCallbacks.forEach((callback) => callback(error));
   }
