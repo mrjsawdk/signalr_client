@@ -18,6 +18,12 @@ enum HubConnectionState {
 
   /// The hub connection is connected.
   Connected,
+
+  /// The hub connection is connecting.
+  Connecting,
+
+  /// The hub connection is reconnecting.
+  Reconnecting,
 }
 
 typedef InvocationEventCallback = void Function(
@@ -61,6 +67,10 @@ class HubConnection {
   ///
   int keepAliveIntervalInMilliseconds;
 
+  bool _isInReconnect;
+
+  Exception _stopDuringStartError;
+
   /// Indicates the state of the {@link HubConnection} to the server.
   HubConnectionState get state => this._connectionState;
 
@@ -77,6 +87,7 @@ class HubConnection {
     _connection.onreceive = _processIncomingData;
     _connection.onclose = _connectionClosed;
 
+    _isInReconnect = false;
     _callbacks = {};
     _methods = {};
     _closedCallbacks = [];
@@ -92,31 +103,79 @@ class HubConnection {
   /// Returns a Promise that resolves when the connection has been successfully established, or rejects with an error.
   ///
   Future<void> start() async {
-    final handshakeRequest =
-        HandshakeRequestMessage(this._protocol.name, this._protocol.version);
+    await _startWithStateTransitions();
+  }
 
+  Future<void> _startWithStateTransitions() async {
+    if (_connectionState != HubConnectionState.Disconnected) {
+      throw new Exception("Cannot start a HubConnection that is not in the 'Disconnected' state."));
+    }
+
+    _connectionState = HubConnectionState.Connecting;
+    _logger.fine("Starting HubConnection.");
+
+    try {
+      await _startInternal();
+
+      _connectionState = HubConnectionState.Connected;
+      _logger.fine("HubConnection connected successfully.");
+    } catch (e) {
+      _connectionState = HubConnectionState.Disconnected;
+      _logger.fine("HubConnection failed to start successfully because of error '$e'.");
+      rethrow;
+    }
+  }
+
+  Future<void> _startInternal() async {
     _logger?.finer("Starting HubConnection.");
 
+    _stopDuringStartError = null;
     _receivedHandshakeResponse = false;
     // Set up the Future before any connection is started otherwise it could race with received messages
     _handshakeCompleter = Completer();
     await _connection.start(transferFormat: _protocol.transferFormat);
 
-    _logger?.finer("Sending handshake request.");
-    await _sendMessage(
-        _handshakeProtocol.writeHandshakeRequest(handshakeRequest));
+    try {
+      final handshakeRequest = HandshakeRequestMessage(this._protocol.name, this._protocol.version);
 
-    _logger?.info("Using HubProtocol '${_protocol.name}'.");
+      _logger?.finer("Sending handshake request.");
+    
+      await _sendMessage(_handshakeProtocol.writeHandshakeRequest(handshakeRequest));
 
-    // defensively cleanup timeout in case we receive a message from the server before we finish start
-    _cleanupTimeoutTimer();
-    _resetTimeoutPeriod();
-    _resetKeepAliveInterval();
+      _logger?.info("Using HubProtocol '${_protocol.name}'.");
 
-    // Wait for the handshake to complete before marking connection as connected
-    await _handshakeCompleter.future;
-    _connectionState = HubConnectionState.Connected;
+      // defensively cleanup timeout in case we receive a message from the server before we finish start
+      _cleanupTimeoutTimer();
+      _resetTimeoutPeriod();
+      _resetKeepAliveInterval();
+
+      // Wait for the handshake to complete before marking connection as connected
+      await _handshakeCompleter.future;
+
+
+      // It's important to check the stopDuringStartError instead of just relying on the handshakePromise
+      // being rejected on close, because this continuation can run after both the handshake completed successfully
+      // and the connection was closed.
+      if (_stopDuringStartError != null) {
+        // It's important to throw instead of returning a rejected promise, because we don't want to allow any state
+        // transitions to occur between now and the calling code observing the exceptions. Returning a rejected promise
+        // will cause the calling continuation to get scheduled to run later.
+        throw _stopDuringStartError;
+      }
+
+    } catch(e) {
+      _logger.fine("Hub handshake failed with error '$e' during start(). Stopping HubConnection.");
+
+      _cleanupTimeoutTimer();
+      _cleanupServerPingTimer();
+
+      // HttpConnection.stop() should not complete until after the onclose callback is invoked.
+      // This will transition the HubConnection to the disconnected state before HttpConnection.stop() completes.
+      await _connection.stop(e);
+      rethrow;
+    }
   }
+
 
   /// Stops the connection.
   ///
@@ -478,6 +537,10 @@ class HubConnection {
     final callbacks = _callbacks;
     callbacks.clear();
 
+    if(_stopDuringStartError == null) {
+      _stopDuringStartError = error != null ? error : new Error("The underlying connection was closed before the hub handshake could complete.");
+    }
+
     // if handshake is in progress start will be waiting for the handshake promise, so we complete it
     // if it has already completed this should just noop
     _handshakeCompleter?.completeError(error);
@@ -496,92 +559,93 @@ class HubConnection {
     }
   }
 
-  Future<void> _reconnect() {
-    //TODO
+//TODO: For some reason this cannot be nullable - does not work in this Dart version
+  int _getNextRetryDelay(int previousReconnectAttempts, int elapsedSeconds, [Exception error]) {
+    //TODO: Copy the policy framework form TS version
+    return 5;
   }
 
-  /*
-  private async reconnect(error?: Error) {
-        const reconnectStartTime = Date.now();
-        let previousReconnectAttempts = 0;
-        let retryError = error !== undefined ? error : new Error("Attempting to reconnect due to a unknown error.");
+  Future<void> _reconnect([Exception error]) async {
+    
+    final reconnectStartTime = DateTime.now();
+    var previousReconnectAttempts = 0;
+    var retryError = error != null ? error : Exception("Attempting to reconnect due to a unknown error.");
 
-        let nextRetryDelay = this.getNextRetryDelay(previousReconnectAttempts++, 0, retryError);
+    var nextRetryDelay = _getNextRetryDelay(previousReconnectAttempts++, 0, retryError);
 
-        if (nextRetryDelay === null) {
-            this.logger.log(LogLevel.Debug, "Connection not reconnecting because the IRetryPolicy returned null on the first reconnect attempt.");
-            this.completeClose(error);
-            return;
-        }
+    if (nextRetryDelay == null) {
+      _logger?.fine("Connection not reconnecting because the IRetryPolicy returned null on the first reconnect attempt.");
+      _completeClose(error);
+      return;
+    } 
+    _connectionState = HubConnectionState.Reconnecting;
 
-        this.connectionState = HubConnectionState.Reconnecting;
-
-        if (error) {
-            this.logger.log(LogLevel.Information, `Connection reconnecting because of error '${error}'.`);
-        } else {
-            this.logger.log(LogLevel.Information, "Connection reconnecting.");
-        }
-
-        if (this.onreconnecting) {
-            try {
-                this.reconnectingCallbacks.forEach((c) => c.apply(this, [error]));
-            } catch (e) {
-                this.logger.log(LogLevel.Error, `An onreconnecting callback called with error '${error}' threw error '${e}'.`);
-            }
-
-            // Exit early if an onreconnecting callback called connection.stop().
-            if (this.connectionState !== HubConnectionState.Reconnecting) {
-                this.logger.log(LogLevel.Debug, "Connection left the reconnecting state in onreconnecting callback. Done reconnecting.");
-                return;
-            }
-        }
-
-        while (nextRetryDelay !== null) {
-            this.logger.log(LogLevel.Information, `Reconnect attempt number ${previousReconnectAttempts} will start in ${nextRetryDelay} ms.`);
-
-            await new Promise((resolve) => {
-                this.reconnectDelayHandle = setTimeout(resolve, nextRetryDelay!);
-            });
-            this.reconnectDelayHandle = undefined;
-
-            if (this.connectionState !== HubConnectionState.Reconnecting) {
-                this.logger.log(LogLevel.Debug, "Connection left the reconnecting state during reconnect delay. Done reconnecting.");
-                return;
-            }
-
-            try {
-                await this.startInternal();
-
-                this.connectionState = HubConnectionState.Connected;
-                this.logger.log(LogLevel.Information, "HubConnection reconnected successfully.");
-
-                if (this.onreconnected) {
-                    try {
-                        this.reconnectedCallbacks.forEach((c) => c.apply(this, [this.connection.connectionId]));
-                    } catch (e) {
-                        this.logger.log(LogLevel.Error, `An onreconnected callback called with connectionId '${this.connection.connectionId}; threw error '${e}'.`);
-                    }
-                }
-
-                return;
-            } catch (e) {
-                this.logger.log(LogLevel.Information, `Reconnect attempt failed because of error '${e}'.`);
-
-                if (this.connectionState !== HubConnectionState.Reconnecting) {
-                    this.logger.log(LogLevel.Debug, "Connection left the reconnecting state during reconnect attempt. Done reconnecting.");
-                    return;
-                }
-
-                retryError = e instanceof Error ? e : new Error(e.toString());
-                nextRetryDelay = this.getNextRetryDelay(previousReconnectAttempts++, Date.now() - reconnectStartTime, retryError);
-            }
-        }
-
-        this.logger.log(LogLevel.Information, `Reconnect retries have been exhausted after ${Date.now() - reconnectStartTime} ms and ${previousReconnectAttempts} failed attempts. Connection disconnecting.`);
-
-        this.completeClose();
+    if (error != null) {
+      _logger?.info("Connection reconnecting because of error '$error'.");
+    } else {
+      _logger?.info("Connection reconnecting.");
     }
-  */
+
+        //TODO: Code for events of "reconnecting"
+        // if (this.onreconnecting) {
+        //     try {
+        //         this.reconnectingCallbacks.forEach((c) => c.apply(this, [error]));
+        //     } catch (e) {
+        //         this.logger.log(LogLevel.Error, `An onreconnecting callback called with error '${error}' threw error '${e}'.`);
+        //     }
+
+        //     // Exit early if an onreconnecting callback called connection.stop().
+        //     if (this.connectionState !== HubConnectionState.Reconnecting) {
+        //         this.logger.log(LogLevel.Debug, "Connection left the reconnecting state in onreconnecting callback. Done reconnecting.");
+        //         return;
+        //     }
+        // }
+
+    while (nextRetryDelay != null) {
+      _logger?.info("Reconnect attempt number $previousReconnectAttempts will start in $nextRetryDelay ms.");
+
+      _isInReconnect = true;
+      await Future.delayed(new Duration(seconds: nextRetryDelay));
+      _isInReconnect = false;
+
+      if (_connectionState != HubConnectionState.Reconnecting) {
+        _logger?.fine("Connection left the reconnecting state during reconnect delay. Done reconnecting.");
+        return;
+      } 
+      try {
+        await _startInternal();
+
+        _connectionState = HubConnectionState.Connected;
+        _logger?.info("HubConnection reconnected successfully.");
+
+        //TODO: Event handlers
+        //         if (this.onreconnected) {
+        //             try {
+        //                 this.reconnectedCallbacks.forEach((c) => c.apply(this, [this.connection.connectionId]));
+        //             } catch (e) {
+        //                 this.logger.log(LogLevel.Error, `An onreconnected callback called with connectionId '${this.connection.connectionId}; threw error '${e}'.`);
+        //             }
+        //         }
+
+        return;
+        } catch (e) {
+          _logger?.info("Reconnect attempt failed because of error '$e'.");
+
+          if (_connectionState != HubConnectionState.Reconnecting) {
+            _logger?.info("Connection left the reconnecting state during reconnect attempt. Done reconnecting.");
+            return;
+          } 
+          retryError = (e is Exception) ? e : new Exception(e.toString());
+          nextRetryDelay = _getNextRetryDelay(previousReconnectAttempts++, _elapsed(reconnectStartTime).inSeconds, retryError);  
+        }
+    }
+    _logger.info("Reconnect retries have been exhausted after ${_elapsed(reconnectStartTime).inMilliseconds} ms and $previousReconnectAttempts failed attempts. Connection disconnecting.");
+    _completeClose(error);
+  }
+
+  Duration _elapsed(DateTime since) {
+    return new Duration(milliseconds: (DateTime.now().millisecondsSinceEpoch - since.millisecondsSinceEpoch));
+  }
 
   bool _canReconnect() {
       return _connectionState == HubConnectionState.Connected &&
