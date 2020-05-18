@@ -607,11 +607,19 @@ class HubConnection {
     _cleanupTimeoutTimer();
     _cleanupServerPingTimer();
 
-    if(_canReconnect()) {
-      _reconnect();
-    } else {
+    if (_connectionState == HubConnectionState.Disconnecting) {
+      _completeClose(error);
+    } else if (_connectionState == HubConnectionState.Connected && this.reconnectPolicy) {
+      _reconnect(error);
+    } else if (_connectionState == HubConnectionState.Connected) {
       _completeClose(error);
     }
+
+    // If none of the above if conditions were true were called the HubConnection must be in either:
+    // 1. The Connecting state in which case the handshakeResolver will complete it and stopDuringStartError will fail it.
+    // 2. The Reconnecting state in which case the handshakeResolver will complete it and stopDuringStartError will fail the current reconnect attempt
+    //    and potentially continue the reconnect() loop.
+     // 3. The Disconnected state in which case we're already done.
   }
 
   int _getNextRetryDelay(int previousReconnectAttempts, int elapsedSeconds, [Exception error]) {
@@ -699,11 +707,6 @@ class HubConnection {
 
   Duration _elapsed(DateTime since) {
     return new Duration(milliseconds: (DateTime.now().millisecondsSinceEpoch - since.millisecondsSinceEpoch));
-  }
-
-  bool _canReconnect() {
-      return _connectionState == HubConnectionState.Connected &&
-            true; //TODO: Migrate logic
   }
 
   void _completeClose([Exception error]) {
