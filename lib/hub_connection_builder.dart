@@ -9,6 +9,7 @@ import 'itransport.dart';
 import 'json_hub_protocol.dart';
 import 'utils.dart';
 
+/// TODO: Extend with new options
 /// A builder for configuring {@link @aspnet/signalr.HubConnection} instances.
 class HubConnectionBuilder {
   // Properties

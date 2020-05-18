@@ -13,6 +13,9 @@ const int DEFAULT_PING_INTERVAL_IN_MS = 15 * 1000;
 
 /// Describes the current state of the {@link HubConnection} to the server.
 enum HubConnectionState {
+  /// The hub connection is disconnecting.
+  Disconnecting,
+
   /// The hub connection is disconnected.
   Disconnected,
 
@@ -71,6 +74,10 @@ class HubConnection {
 
   Exception _stopDuringStartError;
 
+  Future<void> _startFuture;
+
+  Future<void> _stopFuture;
+
   /// Indicates the state of the {@link HubConnection} to the server.
   HubConnectionState get state => this._connectionState;
 
@@ -102,8 +109,9 @@ class HubConnection {
   ///
   /// Returns a Promise that resolves when the connection has been successfully established, or rejects with an error.
   ///
-  Future<void> start() async {
-    await _startWithStateTransitions();
+  Future<void> start() {
+    _startFuture = _startWithStateTransitions();
+    return _startFuture;
   }
 
   Future<void> _startWithStateTransitions() async {
@@ -152,7 +160,6 @@ class HubConnection {
       // Wait for the handshake to complete before marking connection as connected
       await _handshakeCompleter.future;
 
-
       // It's important to check the stopDuringStartError instead of just relying on the handshakePromise
       // being rejected on close, because this continuation can run after both the handshake completed successfully
       // and the connection was closed.
@@ -181,13 +188,56 @@ class HubConnection {
   ///
   /// Returns a Promise that resolves when the connection has been successfully terminated, or rejects with an error.
   ///
-  Future<void> stop() {
-    _logger?.finer("Stopping HubConnection.");
+  Future<void> stop() async {
+    // Capture the start promise before the connection might be restarted in an onclose callback.
+    var startFuture = _startFuture;
 
-    //TODO: Call stopInternal to distinguish between forced disconnect and connection loss
+    _stopFuture = _stopInternal();
+    await _stopFuture;
+
+    try {
+      // Awaiting undefined continues immediately
+      await startFuture;
+    } catch (e) {
+      // This exception is returned to the user as a rejected Promise from the start method.
+    }
+  }
+
+  Future<void> _stopInternal([Exception error]) async {
+    if (_connectionState == HubConnectionState.Disconnected) {
+      _logger.fine("Call to HubConnection.stop($error) ignored because it is already in the disconnected state.");
+      return;
+    }
+
+    if (_connectionState == HubConnectionState.Disconnecting) {
+      _logger.fine("Call to HttpConnection.stop($error) ignored because the connection is already in the disconnecting state.");
+      return _stopFuture;
+    }
+
+    _connectionState = HubConnectionState.Disconnecting;
+
+    _logger.fine("Stopping HubConnection.");
+
+    if (_isInReconnect) {
+      // We're in a reconnect delay which means the underlying connection is currently already stopped.
+      // Just clear the handle to stop the reconnect loop (which no one is waiting on thankfully) and
+      // fire the onclose callbacks.
+      _logger.fine("Connection stopped during reconnect delay. Done reconnecting.");
+
+      _isInReconnect = false;
+
+      _completeClose();
+      return;
+    }
+
     _cleanupTimeoutTimer();
     _cleanupServerPingTimer();
-    return _connection.stop(Exception("closed"));
+    _stopDuringStartError = error == null ? new Exception("The connection was stopped before the hub handshake could complete.") : error;
+
+    // HttpConnection.stop() should not complete until after either HttpConnection.start() fails
+    // or the onclose callback is invoked. The onclose callback will transition the HubConnection
+    // to the disconnected state if need be before HttpConnection.stop() completes.
+    return _connection.stop(error);
   }
 
   /// Invokes a streaming hub method on the server using the specified name and arguments.
@@ -413,12 +463,18 @@ class HubConnection {
             _logger?.info("Close message received from server.");
             final closeMsg = message as CloseMessage;
 
-            // We don't want to wait on the stop itself.
-            //TODO: Check for "allowreconnect" and if so this is OK, if not call stopInternal which sets the right state
-            _connection.stop(!isStringEmpty(closeMsg.error)
-                ? new GeneralError(
-                    "Server returned an error on close: '${closeMsg.error}'")
-                : null);
+            var error = closeMsg.error != null ? new Exception("Server returned an error on close: " + closeMsg.error) : new Exception("Unknown error");
+
+            if (closeMsg.allowReconnect == true) {
+              // It feels wrong not to await connection.stop() here, but processIncomingData is called as part of an onreceive callback which is not async,
+              // this is already the behavior for serverTimeout(), and HttpConnection.Stop() should catch and log all possible exceptions.
+
+              // tslint:disable-next-line:no-floating-promises
+              _connection.stop(error);
+            } else {
+              // We cannot await stopInternal() here, but subsequent calls to stop() will await this if stopInternal() is still ongoing.
+              _stopFuture = _stopInternal(error);
+            }
 
             break;
           default:
@@ -523,9 +579,8 @@ class HubConnection {
             "Server requested a response, which is not supported in this version of the client.";
         _logger?.severe(message);
 
-        // We don't need to wait on this Promise.
-        //TODO: Call stopinternal in stead to prevent reconnect
-        _connection.stop(new GeneralError(message));
+        // We don't want to wait on the stop itself.
+        _stopFuture = _stopInternal(GeneralError(message));
       }
     } else {
       _logger?.warning(
@@ -559,7 +614,6 @@ class HubConnection {
     }
   }
 
-//TODO: For some reason this cannot be nullable - does not work in this Dart version
   int _getNextRetryDelay(int previousReconnectAttempts, int elapsedSeconds, [Exception error]) {
     //TODO: Copy the policy framework form TS version
     return 5;
@@ -652,7 +706,7 @@ class HubConnection {
             true; //TODO: Migrate logic
   }
 
-  void _completeClose(Exception error) {
+  void _completeClose([Exception error]) {
     _connectionState = HubConnectionState.Disconnected;
     _closedCallbacks.forEach((callback) => callback(error));
     //TODO: Log the error
