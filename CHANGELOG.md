@@ -1,3 +1,6 @@
+## [0.1.7]
+* Added draft of automatic reconnect
+
 ## [0.1.5]
 * Fix complex object serialization to json.
 
