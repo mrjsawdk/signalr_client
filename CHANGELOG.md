@@ -1,4 +1,4 @@
-## [0.1.7]
+## [0.1.7-dev.1.]
 * Added draft of automatic reconnect
 
 ## [0.1.5]
