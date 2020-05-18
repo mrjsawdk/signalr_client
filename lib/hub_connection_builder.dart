@@ -1,6 +1,6 @@
 import 'package:logging/logging.dart';
-import 'package:signalr_client/default_retry_policy.dart';
-import 'package:signalr_client/iretry_policy.dart';
+import 'default_retry_policy.dart';
+import 'iretry_policy.dart';
 
 import 'errors.dart';
 import 'http_connection.dart';

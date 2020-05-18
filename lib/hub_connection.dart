@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:logging/logging.dart';
-import 'package:signalr_client/iretry_policy.dart';
+import 'iretry_policy.dart';
 
 import 'errors.dart';
 import 'handshake_protocol.dart';

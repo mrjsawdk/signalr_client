@@ -1,7 +1,7 @@
 import 'dart:collection';
 
 import 'package:logging/logging.dart';
-import 'package:signalr_client/utils.dart';
+import 'utils.dart';
 
 import 'errors.dart';
 import 'itransport.dart';

@@ -1,4 +1,4 @@
-import 'package:signalr_client/iretry_policy.dart';
+import 'iretry_policy.dart';
 
 class DefaultRetryPolicy implements IRetryPolicy {
   
