@@ -34,6 +34,8 @@ typedef InvocationEventCallback = void Function(
     HubMessageBase invocationEvent, Exception error);
 typedef MethodInvacationFunc = void Function(List<Object> arguments);
 typedef ClosedCallback = void Function(Exception error);
+typedef ReconnectingCallback = void Function(Exception error);
+typedef ReconnectedCallback = void Function(String connectionId);
 
 /// Represents a connection to a SignalR Hub
 class HubConnection {
@@ -47,6 +49,8 @@ class HubConnection {
   Map<String, InvocationEventCallback> _callbacks;
   Map<String, List<MethodInvacationFunc>> _methods;
   List<ClosedCallback> _closedCallbacks;
+  List<ReconnectingCallback> _reconnectingCallbacks;
+  List<ReconnectedCallback> _reconnectedCallbacks;
 
   int _id;
   bool _receivedHandshakeResponse;
@@ -71,7 +75,7 @@ class HubConnection {
   ///
   int keepAliveIntervalInMilliseconds;
 
-  bool _isInReconnect;
+  bool _isInReconnectWait;
 
   Exception _stopDuringStartError;
 
@@ -98,10 +102,12 @@ class HubConnection {
     _connection.onreceive = _processIncomingData;
     _connection.onclose = _connectionClosed;
 
-    _isInReconnect = false;
+    _isInReconnectWait = false;
     _callbacks = {};
     _methods = {};
     _closedCallbacks = [];
+    _reconnectingCallbacks = [];
+    _reconnectedCallbacks = [];
     _id = 0;
     _receivedHandshakeResponse = false;
     _connectionState = HubConnectionState.Disconnected;
@@ -208,9 +214,11 @@ class HubConnection {
   }
 
   Future<void> _stopInternal([Exception error]) async {
+    var completer = new Completer();
+
     if (_connectionState == HubConnectionState.Disconnected) {
       _logger.fine("Call to HubConnection.stop($error) ignored because it is already in the disconnected state.");
-      return;
+      return completer.future;
     }
 
     if (_connectionState == HubConnectionState.Disconnecting) {
@@ -222,16 +230,16 @@ class HubConnection {
 
     _logger.fine("Stopping HubConnection.");
 
-    if (_isInReconnect) {
+    if (_isInReconnectWait) {
       // We're in a reconnect delay which means the underlying connection is currently already stopped.
       // Just clear the handle to stop the reconnect loop (which no one is waiting on thankfully) and
       // fire the onclose callbacks.
       _logger.fine("Connection stopped during reconnect delay. Done reconnecting.");
 
-      _isInReconnect = false;
+      _isInReconnectWait = false;
 
       _completeClose();
-      return;
+      return completer.future;
     }
 
     _cleanupTimeoutTimer();
@@ -425,6 +433,26 @@ class HubConnection {
   void onclose(ClosedCallback callback) {
     if (callback != null) {
       _closedCallbacks.add(callback);
+    }
+  }
+
+  /// Registers a handler that will be invoked when the connection starts reconnecting.
+  ///
+  /// @param {Function} callback The handler that will be invoked when the connection starts reconnecting. Optionally receives a single argument containing the error that caused the connection to start reconnecting (if any).
+  ///
+  onreconnecting(ReconnectingCallback callback) {
+    if (callback != null) {
+      _reconnectingCallbacks.add(callback);
+    }
+  }
+
+  /// Registers a handler that will be invoked when the connection successfully reconnects.
+  ///
+  /// @param {Function} callback The handler that will be invoked when the connection successfully reconnects.
+  ///
+  onreconnected(ReconnectedCallback callback) {
+    if (callback != null) {
+      _reconnectedCallbacks.add(callback);
     }
   }
 
@@ -651,27 +679,26 @@ class HubConnection {
       _logger?.info("Connection reconnecting.");
     }
 
-        //TODO: Code for events of "reconnecting"
-        // if (this.onreconnecting) {
-        //     try {
-        //         this.reconnectingCallbacks.forEach((c) => c.apply(this, [error]));
-        //     } catch (e) {
-        //         this.logger.log(LogLevel.Error, `An onreconnecting callback called with error '${error}' threw error '${e}'.`);
-        //     }
+    if (_reconnectingCallbacks.length > 0) {
+      try {
+        _reconnectingCallbacks.forEach((c) => c.call(error));
+      } catch (e) {
+        _logger.severe("An onreconnecting callback called with error '$error' threw error '$e'.");
+      }
 
-        //     // Exit early if an onreconnecting callback called connection.stop().
-        //     if (this.connectionState !== HubConnectionState.Reconnecting) {
-        //         this.logger.log(LogLevel.Debug, "Connection left the reconnecting state in onreconnecting callback. Done reconnecting.");
-        //         return;
-        //     }
-        // }
+      // Exit early if an onreconnecting callback called connection.stop().
+      if (_connectionState != HubConnectionState.Reconnecting) {
+        _logger.fine("Connection left the reconnecting state in onreconnecting callback. Done reconnecting.");
+        return;
+      }
+    }
 
     while (nextRetryDelay != null) {
       _logger?.info("Reconnect attempt number $previousReconnectAttempts will start in $nextRetryDelay ms.");
 
-      _isInReconnect = true;
+      _isInReconnectWait = true;
       await Future.delayed(new Duration(seconds: nextRetryDelay));
-      _isInReconnect = false;
+      _isInReconnectWait = false;
 
       if (_connectionState != HubConnectionState.Reconnecting) {
         _logger?.fine("Connection left the reconnecting state during reconnect delay. Done reconnecting.");
@@ -683,14 +710,13 @@ class HubConnection {
         _connectionState = HubConnectionState.Connected;
         _logger?.info("HubConnection reconnected successfully.");
 
-        //TODO: Event handlers
-        //         if (this.onreconnected) {
-        //             try {
-        //                 this.reconnectedCallbacks.forEach((c) => c.apply(this, [this.connection.connectionId]));
-        //             } catch (e) {
-        //                 this.logger.log(LogLevel.Error, `An onreconnected callback called with connectionId '${this.connection.connectionId}; threw error '${e}'.`);
-        //             }
-        //         }
+        if (_reconnectedCallbacks.length > 0) {
+          try {
+            _reconnectedCallbacks.forEach((c) => c.call(_connection.connectionId));
+          } catch (e) {
+            _logger.severe("An onreconnected callback called with connectionId '$this.connection.connectionId; threw error '$e'.");
+          }
+        }
 
         return;
         } catch (e) {
