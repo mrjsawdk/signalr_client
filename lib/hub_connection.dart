@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:logging/logging.dart';
+import 'package:signalr_client/iretry_policy.dart';
 
 import 'errors.dart';
 import 'handshake_protocol.dart';
@@ -78,12 +79,15 @@ class HubConnection {
 
   Future<void> _stopFuture;
 
+  final IRetryPolicy _reconnectPolicy;
+
   /// Indicates the state of the {@link HubConnection} to the server.
   HubConnectionState get state => this._connectionState;
 
-  HubConnection(IConnection connection, Logger logger, IHubProtocol protocol)
+  HubConnection(IConnection connection, Logger logger, IHubProtocol protocol, [IRetryPolicy reconnectPolicy])
       : assert(connection != null),
         assert(protocol != null),
+        _reconnectPolicy = reconnectPolicy,
         _connection = connection,
         _logger = logger,
         _protocol = protocol,
@@ -116,7 +120,7 @@ class HubConnection {
 
   Future<void> _startWithStateTransitions() async {
     if (_connectionState != HubConnectionState.Disconnected) {
-      throw new Exception("Cannot start a HubConnection that is not in the 'Disconnected' state."));
+      throw new Exception("Cannot start a HubConnection that is not in the 'Disconnected' state.");
     }
 
     _connectionState = HubConnectionState.Connecting;
@@ -609,7 +613,7 @@ class HubConnection {
 
     if (_connectionState == HubConnectionState.Disconnecting) {
       _completeClose(error);
-    } else if (_connectionState == HubConnectionState.Connected && this.reconnectPolicy) {
+    } else if (_connectionState == HubConnectionState.Connected && _reconnectPolicy != null) {
       _reconnect(error);
     } else if (_connectionState == HubConnectionState.Connected) {
       _completeClose(error);
@@ -622,9 +626,8 @@ class HubConnection {
      // 3. The Disconnected state in which case we're already done.
   }
 
-  int _getNextRetryDelay(int previousReconnectAttempts, int elapsedSeconds, [Exception error]) {
-    //TODO: Copy the policy framework form TS version
-    return 5;
+  int _getNextRetryDelay(int previousReconnectAttempts, int elapsedMiliSeconds, [Exception error]) {
+    return _reconnectPolicy.nextRetryDelayInMilliseconds(new RetryContext(previousReconnectAttempts,elapsedMiliSeconds,error));
   }
 
   Future<void> _reconnect([Exception error]) async {
@@ -712,7 +715,9 @@ class HubConnection {
   void _completeClose([Exception error]) {
     _connectionState = HubConnectionState.Disconnected;
     _closedCallbacks.forEach((callback) => callback(error));
-    //TODO: Log the error
+    if(error != null) {
+      _logger?.info("Connection closed with error $error.");
+    }
   }
 
   InvocationMessage _createInvocation(

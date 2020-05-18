@@ -1,4 +1,6 @@
 import 'package:logging/logging.dart';
+import 'package:signalr_client/default_retry_policy.dart';
+import 'package:signalr_client/iretry_policy.dart';
 
 import 'errors.dart';
 import 'http_connection.dart';
@@ -9,7 +11,6 @@ import 'itransport.dart';
 import 'json_hub_protocol.dart';
 import 'utils.dart';
 
-/// TODO: Extend with new options
 /// A builder for configuring {@link @aspnet/signalr.HubConnection} instances.
 class HubConnectionBuilder {
   // Properties
@@ -21,6 +22,8 @@ class HubConnectionBuilder {
   String _url;
 
   Logger _logger;
+
+  IRetryPolicy _reconnectPolicy;
 
   /// Configures console logging for the HubConnection.
   ///
@@ -67,6 +70,33 @@ class HubConnectionBuilder {
     return this;
   }
 
+  /// Configures the {@link @microsoft/signalr.HubConnection} to automatically attempt to reconnect if the connection is lost.
+  /// By default, the client will wait 0, 2, 10 and 30 seconds respectively before trying up to 4 reconnect attempts.
+  ///
+  HubConnectionBuilder withAutomaticReconnect() {
+    _reconnectPolicy = new DefaultRetryPolicy();
+    return this;
+  }
+
+  /// Configures the {@link @microsoft/signalr.HubConnection} to automatically attempt to reconnect if the connection is lost.
+  ///  
+  /// @param {number[]} retryDelays An array containing the delays in milliseconds before trying each reconnect attempt.
+  /// The length of the array represents how many failed reconnect attempts it takes before the client will stop attempting to reconnect.
+  /// 
+  HubConnectionBuilder withAutomaticReconnectAndCustomDelays(List<int> retryDelays) {
+    _reconnectPolicy = new DefaultRetryPolicy(retryDelays);
+    return this;
+  }
+
+  /// Configures the {@link @microsoft/signalr.HubConnection} to automatically attempt to reconnect if the connection is lost.
+  ///
+  ///@param {IRetryPolicy} reconnectPolicy An {@link @microsoft/signalR.IRetryPolicy} that controls the timing and number of reconnect attempts.
+  ///
+  HubConnectionBuilder withAutomaticReconnectAndCustomPolicy(IRetryPolicy reconnectPolicy) {
+    _reconnectPolicy = reconnectPolicy;
+    return this;
+  }
+
   /// Creates a HubConnection from the configuration options specified in this builder.
   ///
   /// Returns the configured HubConnection.
@@ -83,6 +113,6 @@ class HubConnectionBuilder {
           "The 'HubConnectionBuilder.withUrl' method must be called before building the connection.");
     }
     final connection = HttpConnection(_url, options: httpConnectionOptions);
-    return HubConnection(connection, _logger, _protocol ?? JsonHubProtocol());
+    return HubConnection(connection, _logger, _protocol ?? JsonHubProtocol(), _reconnectPolicy);
   }
 }
