@@ -593,7 +593,7 @@ class HubConnection {
     callbacks.clear();
 
     if(_stopDuringStartError == null) {
-      _stopDuringStartError = error != null ? error : new Error("The underlying connection was closed before the hub handshake could complete.");
+      _stopDuringStartError = error != null ? error : new Exception("The underlying connection was closed before the hub handshake could complete.");
     }
 
     // if handshake is in progress start will be waiting for the handshake promise, so we complete it
