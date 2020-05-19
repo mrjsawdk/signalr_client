@@ -1,3 +1,6 @@
+## [0.1.7-dev.2]
+* Fixed delay during reconnect
+
 ## [0.1.7-dev.1]
 * Added draft of automatic reconnect
 

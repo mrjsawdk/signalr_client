@@ -58,6 +58,7 @@ class HubConnection {
 
   HubConnectionState _connectionState;
 
+  Timer _reconnectDelayHandle;
   Timer _timeoutTimer;
   Timer _pingServerTimer;
 
@@ -74,8 +75,6 @@ class HubConnection {
   /// Allows the server to detect hard disconnects (like when a client unplugs their computer).
   ///
   int keepAliveIntervalInMilliseconds;
-
-  bool _isInReconnectWait;
 
   Exception _stopDuringStartError;
 
@@ -98,11 +97,11 @@ class HubConnection {
         _handshakeProtocol = HandshakeProtocol() {
     serverTimeoutInMilliseconds = DEFAULT_TIMEOUT_IN_MS;
     keepAliveIntervalInMilliseconds = DEFAULT_PING_INTERVAL_IN_MS;
+    _reconnectDelayHandle = null;
 
     _connection.onreceive = _processIncomingData;
     _connection.onclose = _connectionClosed;
 
-    _isInReconnectWait = false;
     _callbacks = {};
     _methods = {};
     _closedCallbacks = [];
@@ -230,13 +229,14 @@ class HubConnection {
 
     _logger.fine("Stopping HubConnection.");
 
-    if (_isInReconnectWait) {
+    if (_reconnectDelayHandle != null) {
       // We're in a reconnect delay which means the underlying connection is currently already stopped.
       // Just clear the handle to stop the reconnect loop (which no one is waiting on thankfully) and
       // fire the onclose callbacks.
       _logger.fine("Connection stopped during reconnect delay. Done reconnecting.");
 
-      _isInReconnectWait = false;
+      _reconnectDelayHandle.cancel();
+      _reconnectDelayHandle = null;
 
       _completeClose();
       return completer.future;
@@ -696,9 +696,11 @@ class HubConnection {
     while (nextRetryDelay != null) {
       _logger?.info("Reconnect attempt number $previousReconnectAttempts will start in $nextRetryDelay ms.");
 
-      _isInReconnectWait = true;
-      await Future.delayed(new Duration(seconds: nextRetryDelay));
-      _isInReconnectWait = false;
+      await Future.value((resolve) async {
+        _reconnectDelayHandle =
+            Timer.periodic(Duration(milliseconds: nextRetryDelay), resolve);
+      });
+      _reconnectDelayHandle = null;
 
       if (_connectionState != HubConnectionState.Reconnecting) {
         _logger?.fine("Connection left the reconnecting state during reconnect delay. Done reconnecting.");
