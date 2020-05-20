@@ -1,3 +1,6 @@
+## [0.1.7-dev.3]
+* Fixed null logger
+
 ## [0.1.7-dev.2]
 * Fixed delay during reconnect
 
