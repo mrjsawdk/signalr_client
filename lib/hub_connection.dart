@@ -129,16 +129,16 @@ class HubConnection {
     }
 
     _connectionState = HubConnectionState.Connecting;
-    _logger.fine("Starting HubConnection.");
+    _logger?.fine("Starting HubConnection.");
 
     try {
       await _startInternal();
 
       _connectionState = HubConnectionState.Connected;
-      _logger.fine("HubConnection connected successfully.");
+      _logger?.fine("HubConnection connected successfully.");
     } catch (e) {
       _connectionState = HubConnectionState.Disconnected;
-      _logger.fine("HubConnection failed to start successfully because of error '$e'.");
+      _logger?.fine("HubConnection failed to start successfully because of error '$e'.");
       rethrow;
     }
   }
@@ -180,7 +180,7 @@ class HubConnection {
       }
 
     } catch(e) {
-      _logger.fine("Hub handshake failed with error '$e' during start(). Stopping HubConnection.");
+      _logger?.fine("Hub handshake failed with error '$e' during start(). Stopping HubConnection.");
 
       _cleanupTimeoutTimer();
       _cleanupServerPingTimer();
@@ -216,24 +216,24 @@ class HubConnection {
     var completer = new Completer();
 
     if (_connectionState == HubConnectionState.Disconnected) {
-      _logger.fine("Call to HubConnection.stop($error) ignored because it is already in the disconnected state.");
+      _logger?.fine("Call to HubConnection.stop($error) ignored because it is already in the disconnected state.");
       return completer.future;
     }
 
     if (_connectionState == HubConnectionState.Disconnecting) {
-      _logger.fine("Call to HttpConnection.stop($error) ignored because the connection is already in the disconnecting state.");
+      _logger?.fine("Call to HttpConnection.stop($error) ignored because the connection is already in the disconnecting state.");
       return _stopFuture;
     }
 
     _connectionState = HubConnectionState.Disconnecting;
 
-    _logger.fine("Stopping HubConnection.");
+    _logger?.fine("Stopping HubConnection.");
 
     if (_reconnectDelayHandle != null) {
       // We're in a reconnect delay which means the underlying connection is currently already stopped.
       // Just clear the handle to stop the reconnect loop (which no one is waiting on thankfully) and
       // fire the onclose callbacks.
-      _logger.fine("Connection stopped during reconnect delay. Done reconnecting.");
+      _logger?.fine("Connection stopped during reconnect delay. Done reconnecting.");
 
       _reconnectDelayHandle.cancel();
       _reconnectDelayHandle = null;
@@ -683,12 +683,12 @@ class HubConnection {
       try {
         _reconnectingCallbacks.forEach((c) => c.call(error));
       } catch (e) {
-        _logger.severe("An onreconnecting callback called with error '$error' threw error '$e'.");
+        _logger?.severe("An onreconnecting callback called with error '$error' threw error '$e'.");
       }
 
       // Exit early if an onreconnecting callback called connection.stop().
       if (_connectionState != HubConnectionState.Reconnecting) {
-        _logger.fine("Connection left the reconnecting state in onreconnecting callback. Done reconnecting.");
+        _logger?.fine("Connection left the reconnecting state in onreconnecting callback. Done reconnecting.");
         return;
       }
     }
@@ -716,7 +716,7 @@ class HubConnection {
           try {
             _reconnectedCallbacks.forEach((c) => c.call(_connection.connectionId));
           } catch (e) {
-            _logger.severe("An onreconnected callback called with connectionId '$this.connection.connectionId; threw error '$e'.");
+            _logger?.severe("An onreconnected callback called with connectionId '$this.connection.connectionId; threw error '$e'.");
           }
         }
 
@@ -732,7 +732,7 @@ class HubConnection {
           nextRetryDelay = _getNextRetryDelay(previousReconnectAttempts++, _elapsed(reconnectStartTime).inSeconds, retryError);  
         }
     }
-    _logger.info("Reconnect retries have been exhausted after ${_elapsed(reconnectStartTime).inMilliseconds} ms and $previousReconnectAttempts failed attempts. Connection disconnecting.");
+    _logger?.info("Reconnect retries have been exhausted after ${_elapsed(reconnectStartTime).inMilliseconds} ms and $previousReconnectAttempts failed attempts. Connection disconnecting.");
     _completeClose(error);
   }
 
