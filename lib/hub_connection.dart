@@ -58,7 +58,7 @@ class HubConnection {
 
   HubConnectionState _connectionState;
 
-  Timer _reconnectDelayHandle;
+  bool _isInReconnectWait;
   Timer _timeoutTimer;
   Timer _pingServerTimer;
 
@@ -97,7 +97,7 @@ class HubConnection {
         _handshakeProtocol = HandshakeProtocol() {
     serverTimeoutInMilliseconds = DEFAULT_TIMEOUT_IN_MS;
     keepAliveIntervalInMilliseconds = DEFAULT_PING_INTERVAL_IN_MS;
-    _reconnectDelayHandle = null;
+    _isInReconnectWait = false;
 
     _connection.onreceive = _processIncomingData;
     _connection.onclose = _connectionClosed;
@@ -229,14 +229,13 @@ class HubConnection {
 
     _logger?.fine("Stopping HubConnection.");
 
-    if (_reconnectDelayHandle != null) {
+    if (_isInReconnectWait) {
       // We're in a reconnect delay which means the underlying connection is currently already stopped.
       // Just clear the handle to stop the reconnect loop (which no one is waiting on thankfully) and
       // fire the onclose callbacks.
       _logger?.fine("Connection stopped during reconnect delay. Done reconnecting.");
 
-      _reconnectDelayHandle.cancel();
-      _reconnectDelayHandle = null;
+      _isInReconnectWait = false;
 
       _completeClose();
       return completer.future;
@@ -696,17 +695,16 @@ class HubConnection {
     while (nextRetryDelay != null) {
       _logger?.info("Reconnect attempt number $previousReconnectAttempts will start in $nextRetryDelay ms.");
 
-      await Future.value((resolve) async {
-        _reconnectDelayHandle =
-            Timer.periodic(Duration(milliseconds: nextRetryDelay), resolve);
-      });
-      _reconnectDelayHandle = null;
+      _isInReconnectWait = true;
+      await Future.delayed(Duration(milliseconds: nextRetryDelay));
+      _isInReconnectWait = false;
 
       if (_connectionState != HubConnectionState.Reconnecting) {
         _logger?.fine("Connection left the reconnecting state during reconnect delay. Done reconnecting.");
         return;
       } 
       try {
+        _logger?.info("Performing reconnect attempt number $previousReconnectAttempts after waiting $nextRetryDelay ms.");
         await _startInternal();
 
         _connectionState = HubConnectionState.Connected;

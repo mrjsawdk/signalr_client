@@ -1,3 +1,6 @@
+## [0.1.7-dev.4]
+* Fix for reconnect wait
+
 ## [0.1.7-dev.3]
 * Fixed null logger
 
