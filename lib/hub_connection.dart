@@ -596,6 +596,7 @@ class HubConnection {
   void _serverTimeout() {
     // The server hasn't talked to us in a while. It doesn't like us anymore ... :(
     // Terminate the connection, but we don't need to wait on the promise.
+    _logger.fine("SERVER TIMEOUT. TERMINATING!");
     _connection.stop(GeneralError(
         "Server timeout elapsed without receiving a message from the server."));
   }

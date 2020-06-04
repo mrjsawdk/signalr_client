@@ -1,3 +1,6 @@
+## [0.1.7-dev.7]
+* Fix to server timeout timer
+
 ## [0.1.7-dev.6]
 * Fix to server timeout timer
 
