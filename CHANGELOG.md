@@ -1,3 +1,6 @@
+## [0.1.7-dev.11]
+* Added more output in websocket
+
 ## [0.1.7-dev.10]
 * Added more output in websocket
 
