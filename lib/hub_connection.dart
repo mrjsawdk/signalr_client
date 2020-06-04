@@ -558,7 +558,7 @@ class HubConnection {
 
   void _resetKeepAliveInterval() {
     _cleanupServerPingTimer();
-    _pingServerTimer =
+    this._pingServerTimer =
         Timer.periodic(Duration(milliseconds: keepAliveIntervalInMilliseconds),
             (Timer t) async {
       if (_connectionState == HubConnectionState.Connected) {
@@ -579,14 +579,13 @@ class HubConnection {
         (_connection.features.inherentKeepAlive == null) ||
         (!_connection.features.inherentKeepAlive)) {
       // Set the timeout timer
-      _timeoutTimer = Timer.periodic(
-          Duration(milliseconds: serverTimeoutInMilliseconds), _serverTimeout);
+      this._timeoutTimer = new Timer(Duration(milliseconds: serverTimeoutInMilliseconds), _serverTimeout);
     }
   }
 
   void _cleanupServerPingTimer() {
-    _pingServerTimer?.cancel();
-    _pingServerTimer = null;
+    this._pingServerTimer?.cancel();
+    this._pingServerTimer = null;
   }
 
   void _cleanupTimeoutTimer() {
@@ -594,7 +593,7 @@ class HubConnection {
     this._timeoutTimer = null;
   }
 
-  void _serverTimeout(Timer t) {
+  void _serverTimeout() {
     // The server hasn't talked to us in a while. It doesn't like us anymore ... :(
     // Terminate the connection, but we don't need to wait on the promise.
     _connection.stop(GeneralError(
