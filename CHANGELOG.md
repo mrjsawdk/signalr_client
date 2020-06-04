@@ -1,3 +1,6 @@
+## [0.1.7-dev.5]
+* Changes to handshake completer
+
 ## [0.1.7-dev.4]
 * Fix for reconnect wait
 

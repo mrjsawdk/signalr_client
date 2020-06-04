@@ -149,7 +149,8 @@ class HubConnection {
     _stopDuringStartError = null;
     _receivedHandshakeResponse = false;
     // Set up the Future before any connection is started otherwise it could race with received messages
-    _handshakeCompleter = Completer();
+    var completer =  Completer(); //keep the reference in scope even if local field is nulled
+    _handshakeCompleter = completer;
     await _connection.start(transferFormat: _protocol.transferFormat);
 
     try {
@@ -167,7 +168,7 @@ class HubConnection {
       _resetKeepAliveInterval();
 
       // Wait for the handshake to complete before marking connection as connected
-      await _handshakeCompleter.future;
+      await completer.future;
 
       // It's important to check the stopDuringStartError instead of just relying on the handshakePromise
       // being rejected on close, because this continuation can run after both the handshake completed successfully
