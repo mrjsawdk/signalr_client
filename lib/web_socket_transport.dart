@@ -65,12 +65,15 @@ class WebSocketTransport implements ITransport {
         if (error != null) {
           return Future.error(error);
         }
+        return Future.value(null);
       },
 
       // onDone
       onDone: () {
-        if (onClose != null) {
-          onClose(null);
+        if(_webSocket.readyState == WebSocket.open) {
+          return _close(null);
+        } else {
+          return Future.error(GeneralError("There was an error with the transport."));
         }
       },
     );
@@ -99,30 +102,27 @@ class WebSocketTransport implements ITransport {
   @override
   Future<void> stop(Error error) async {
     if (_webSocket != null) {
-      // Clear websocket handlers because we are considering the socket closed now
-      if (_webSocketListenSub != null) {
-        await _webSocketListenSub.cancel();
-        _webSocketListenSub = null;
-      }
-      _webSocket.close();
-      _webSocket = null;
-
-      // Manually invoke onclose callback inline so we know the HttpConnection was closed properly before returning
-      // This also solves an issue where websocket.onclose could take 18+ seconds to trigger during network disconnects
-      _close(null);
+      _close(error);
     }
 
     return Future.value(null);
   }
 
-  void _close(Error error) {
+  Future<void> _close(Error error) async{
     _logger?.finest("(WebSockets transport) socket closed.");
-    if (onClose != null) {
-      if (error != null) {
-        // if (event && (event.wasClean === false || event.code !== 1000)) {
-        // this.onclose(new Error(`Websocket closed with status code: ${event.code} (${event.reason})`));
-      }
-      onClose(GeneralError(error?.toString()));
+    // Clear websocket handlers because we are considering the socket closed now
+    if (_webSocketListenSub != null) {
+      await _webSocketListenSub.cancel();
+      _webSocketListenSub = null;
+    }
+    _webSocket.close();
+    _webSocket = null;
+
+    // Manually invoke onclose callback inline so we know the HttpConnection was closed properly before returning
+    // This also solves an issue where websocket.onclose could take 18+ seconds to trigger during network disconnects
+      
+    if(onClose != null) {
+      onClose(error != null ? error : GeneralError(error?.toString()));
     }
   }
 }

@@ -1,3 +1,6 @@
+## [0.1.7-dev.9]
+* Ported changes to websocket
+
 ## [0.1.7-dev.8]
 * Do not fail connection on invocation of client method
 
