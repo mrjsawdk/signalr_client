@@ -1,3 +1,6 @@
+## [0.1.7-dev.8]
+* Do not fail connection on invocation of client method
+
 ## [0.1.7-dev.7]
 * Fix to server timeout timer
 

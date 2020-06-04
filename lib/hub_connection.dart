@@ -502,6 +502,7 @@ class HubConnection {
               // this is already the behavior for serverTimeout(), and HttpConnection.Stop() should catch and log all possible exceptions.
 
               // tslint:disable-next-line:no-floating-promises
+            _logger?.info("Server allows reconnect. Stopping connection to initiate!");
               _connection.stop(error);
             } else {
               // We cannot await stopInternal() here, but subsequent calls to stop() will await this if stopInternal() is still ongoing.
@@ -604,7 +605,12 @@ class HubConnection {
   void _invokeClientMethod(InvocationMessage invocationMessage) {
     final methods = _methods[invocationMessage.target.toLowerCase()];
     if (methods != null) {
-      methods.forEach((m) => m(invocationMessage.arguments));
+      try {
+        methods.forEach((m) => m(invocationMessage.arguments));
+      } catch (e) {
+        _logger.severe("A callback for the method ${invocationMessage.target.toLowerCase()} threw error '$e'.");
+      }
+
       if (!isStringEmpty(invocationMessage.invocationId)) {
         // This is not supported in v1. So we return an error to avoid blocking the server waiting for the response.
         final message =
