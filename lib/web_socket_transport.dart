@@ -65,15 +65,13 @@ class WebSocketTransport implements ITransport {
         if (error != null) {
           return Future.error(error);
         }
-        return Future.value(null);
       },
 
       // onDone
       onDone: () {
-        if(_webSocket.readyState == WebSocket.open) {
-          return _close(null);
-        } else {
-          return Future.error(GeneralError("There was an error with the transport."));
+        _logger.fine("WebSocket closed - state is ${_webSocket.readyState} and closed reason was: ${_webSocket.closeCode}:${_webSocket.closeReason}");
+        if (onClose != null) {
+          onClose(null);
         }
       },
     );
@@ -102,27 +100,32 @@ class WebSocketTransport implements ITransport {
   @override
   Future<void> stop(Error error) async {
     if (_webSocket != null) {
-      _close(error);
+      // Clear websocket handlers because we are considering the socket closed now
+      if (_webSocketListenSub != null) {
+        await _webSocketListenSub.cancel();
+        _webSocketListenSub = null;
+      }
+      _webSocket.close();
+      _webSocket = null;
+
+      // Manually invoke onclose callback inline so we know the HttpConnection was closed properly before returning
+      // This also solves an issue where websocket.onclose could take 18+ seconds to trigger during network disconnects
+      _close(null);
     }
 
     return Future.value(null);
   }
 
-  Future<void> _close(Error error) async{
+  void _close(Error error) {
     _logger?.finest("(WebSockets transport) socket closed.");
-    // Clear websocket handlers because we are considering the socket closed now
-    if (_webSocketListenSub != null) {
-      await _webSocketListenSub.cancel();
-      _webSocketListenSub = null;
-    }
-    _webSocket.close();
-    _webSocket = null;
-
-    // Manually invoke onclose callback inline so we know the HttpConnection was closed properly before returning
-    // This also solves an issue where websocket.onclose could take 18+ seconds to trigger during network disconnects
-      
-    if(onClose != null) {
-      onClose(error != null ? error : GeneralError(error?.toString()));
+    if (onClose != null) {
+      if (error != null) {
+        // if (event && (event.wasClean === false || event.code !== 1000)) {
+        // this.onclose(new Error(`Websocket closed with status code: ${event.code} (${event.reason})`));
+      }
+      if(onClose!=null) {
+        onClose(GeneralError(error?.toString()));
+      }
     }
   }
 }
