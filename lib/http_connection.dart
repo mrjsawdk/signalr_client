@@ -395,6 +395,7 @@ class HttpConnection implements IConnection {
 
     // If we have a stopError, it takes precedence over the error from the transport
     error = _stopError ?? error;
+    _stopError = null;
 
     if (error != null) {
       _logger?.severe("Connection disconnected with error '$error'.");
