@@ -1,7 +1,7 @@
 import 'dart:collection';
 
 import 'package:logging/logging.dart';
-import 'package:signalr_client/utils.dart';
+import 'utils.dart';
 
 import 'errors.dart';
 import 'itransport.dart';
@@ -226,10 +226,14 @@ class CloseMessage extends HubMessageBase {
   ///
   /// If this property is undefined, the connection was closed normally and without error.
   final String error;
+  
+  /// Determines if the close message allows reconnect
+  final bool allowReconnect;
 
   //Methods
-  CloseMessage(String error)
+  CloseMessage(String error, bool allowReconnect)
       : this.error = error,
+        this.allowReconnect = allowReconnect,
         super(MessageType.Close);
 }
 

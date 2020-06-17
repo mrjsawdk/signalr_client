@@ -69,8 +69,11 @@ class WebSocketTransport implements ITransport {
 
       // onDone
       onDone: () {
-        if (onClose != null) {
-          onClose(null);
+        _logger.fine("WebSocket closed - state is ${_webSocket.readyState} and closed reason was: ${_webSocket.closeCode}:${_webSocket.closeReason}");
+        if(_webSocket.readyState == WebSocket.open) {
+          if (onClose != null) {
+            onClose(null);
+          }
         }
       },
     );
@@ -98,6 +101,7 @@ class WebSocketTransport implements ITransport {
 
   @override
   Future<void> stop(Error error) async {
+    _logger.finer("STOPPING WEBSOCKET CONNECTION");
     if (_webSocket != null) {
       // Clear websocket handlers because we are considering the socket closed now
       if (_webSocketListenSub != null) {
@@ -109,7 +113,7 @@ class WebSocketTransport implements ITransport {
 
       // Manually invoke onclose callback inline so we know the HttpConnection was closed properly before returning
       // This also solves an issue where websocket.onclose could take 18+ seconds to trigger during network disconnects
-      _close(null);
+      _close(error);
     }
 
     return Future.value(null);

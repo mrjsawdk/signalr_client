@@ -11,6 +11,8 @@ class ConnectionFeatures {
 }
 
 abstract class IConnection {
+  String connectionId;
+  
   ConnectionFeatures features;
 
   Future<void> start({TransferFormat transferFormat});

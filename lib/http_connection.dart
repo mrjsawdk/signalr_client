@@ -95,6 +95,7 @@ class HttpConnection implements IConnection {
   // Properties
   static final maxRedirects = 100;
 
+  String connectionId;
   ConnectionState _connectionState;
   String _baseUrl;
   SignalRHttpClient _httpClient;
@@ -323,6 +324,7 @@ class HttpConnection implements IConnection {
         connectUrl = _createConnectUrl(url, negotiateResponse.connectionId);
       }
       try {
+        connectionId = negotiateResponse.connectionId;
         await _transport?.connect(connectUrl, requestedTransferFormat);
         _changeState(ConnectionState.Connecting, ConnectionState.Connected);
         return;
@@ -393,6 +395,7 @@ class HttpConnection implements IConnection {
 
     // If we have a stopError, it takes precedence over the error from the transport
     error = _stopError ?? error;
+    _stopError = null;
 
     if (error != null) {
       _logger?.severe("Connection disconnected with error '$error'.");
@@ -401,6 +404,7 @@ class HttpConnection implements IConnection {
     }
 
     _connectionState = ConnectionState.Disconnected;
+    connectionId = null;
 
     if (onclose != null) {
       onclose(error);

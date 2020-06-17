@@ -1,3 +1,36 @@
+## [0.1.7-dev.11]
+* Added more output in websocket
+
+## [0.1.7-dev.10]
+* Added more output in websocket
+
+## [0.1.7-dev.9]
+* Ported changes to websocket
+
+## [0.1.7-dev.8]
+* Do not fail connection on invocation of client method
+
+## [0.1.7-dev.7]
+* Fix to server timeout timer
+
+## [0.1.7-dev.6]
+* Fix to server timeout timer
+
+## [0.1.7-dev.5]
+* Changes to handshake completer
+
+## [0.1.7-dev.4]
+* Fix for reconnect wait
+
+## [0.1.7-dev.3]
+* Fixed null logger
+
+## [0.1.7-dev.2]
+* Fixed delay during reconnect
+
+## [0.1.7-dev.1]
+* Added draft of automatic reconnect
+
 ## [0.1.5]
 * Fix complex object serialization to json.
 

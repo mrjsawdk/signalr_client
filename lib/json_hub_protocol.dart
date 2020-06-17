@@ -148,7 +148,10 @@ class JsonHubProtocol implements IHubProtocol {
   }
 
   static CloseMessage _getCloseMessageFormJson(Map<String, dynamic> jsonData) {
-    return CloseMessage(jsonData["error"]);
+    if(jsonData.containsKey("allowReconnect")) {
+      return CloseMessage(jsonData["error"], jsonData["allowReconnect"]);  
+    }
+    return CloseMessage(jsonData["error"], false);
   }
 
   /// Writes the specified HubMessage to a string and returns it.
@@ -214,7 +217,7 @@ class JsonHubProtocol implements IHubProtocol {
     }
 
     if (message is CloseMessage) {
-      return {"type": messageType, "error": message.error};
+      return {"type": messageType, "error": message.error, "allowReconnect" : message.allowReconnect };
     }
 
     if (message is CancelInvocationMessage) {
